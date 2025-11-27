@@ -55,6 +55,34 @@ HTML_TEMPLATE = """
 </html>
 """
 
+# --- YARDIMCI FONKSİYON: Türkçe Tarih Çevirici ---
+def tarihi_formatla(tarih_metni):
+    """ '26 Kasım 2025' formatındaki metni '26.11.2025' formatına çevirir """
+    try:
+        aylar = {
+            "Ocak": "01", "Şubat": "02", "Mart": "03", "Nisan": "04", "Mayıs": "05", "Haziran": "06",
+            "Temmuz": "07", "Ağustos": "08", "Eylül": "09", "Ekim": "10", "Kasım": "11", "Aralık": "12",
+            "January": "01", "February": "02", "March": "03", "April": "04", "May": "05", "June": "06",
+            "July": "07", "August": "08", "September": "09", "October": "10", "November": "11", "December": "12"
+        }
+        
+        # Gereksiz boşluk ve iki nokta temizliği
+        temiz_metin = tarih_metni.replace(":", "").strip()
+        parcalar = temiz_metin.split() # ['26', 'Kasım', '2025']
+        
+        if len(parcalar) >= 3:
+            gun = parcalar[0].zfill(2) # 2 -> 02 yapar
+            ay_isim = parcalar[1]
+            yil = parcalar[2]
+            
+            ay_no = aylar.get(ay_isim, "00")
+            if ay_no != "00":
+                return f"{gun}.{ay_no}.{yil}"
+        
+        return temiz_metin # Çeviremezse olduğu gibi dönsün
+    except:
+        return tarih_metni
+
 # --- PYTHON MANTIĞI (EXCEL OLUŞTURMA) ---
 def process_html_to_excel(html_content):
     soup = BeautifulSoup(html_content, 'html.parser')
@@ -62,13 +90,24 @@ def process_html_to_excel(html_content):
     
     sube_verileri = {}
     aktif_sube = None
+    rapor_tarihi_html = None # HTML'den çekilecek tarih
 
     # HTML Analizi
     for satir in satirlar:
         satir_metni = satir.get_text(" ", strip=True)
         hucreler = satir.find_all('td')
 
-        # 1. Şube Bulma (Firma Ünvanı veya colspan)
+        # --- 0. TARİH BULMA ---
+        if "Rapor Tarihi" in satir_metni:
+            for td in hucreler:
+                txt = td.get_text(strip=True)
+                # 'Rapor Tarihi' yazısı olmayan ama dolu olan hücre tarihtir
+                if txt and "Rapor Tarihi" not in txt:
+                    rapor_tarihi_html = tarihi_formatla(txt) # 26.11.2025'e çevir
+                    break
+            continue
+
+        # --- 1. ŞUBE BULMA ---
         if "Firma Ünvanı" in satir_metni:
             for td in hucreler:
                 txt = td.get_text(strip=True)
@@ -83,16 +122,16 @@ def process_html_to_excel(html_content):
                 txt = genis_hucre.get_text(strip=True)
                 if txt: aktif_sube = txt
 
-        # 2. Veri İşleme
+        # --- 2. VERİ İŞLEME ---
         if aktif_sube and ("SİSTEM KAPATILDI" in satir_metni or "SİSTEM KURULDU" in satir_metni):
             if aktif_sube not in sube_verileri:
                 sube_verileri[aktif_sube] = {"acilis_saat": "", "acilis_kisi": "", "kapanis_saat": "", "kapanis_kisi": ""}
 
-            # Saat Bulma (Regex)
+            # Saat Bulma
             saat_match = re.search(r'\b([0-9]{1,2}):([0-9]{2})\b', satir_metni)
             saat = saat_match.group(0) if saat_match else ""
 
-            # Personel Bulma
+            # Personel Bulma ve Temizleme
             ham_veri = ""
             for td in hucreler:
                 if "SİSTEM" in td.get_text():
@@ -103,6 +142,8 @@ def process_html_to_excel(html_content):
             personel = ""
             if "SİSTEM" in ham_veri:
                 personel = ham_veri.split("SİSTEM")[0].strip(" .")
+                # İsim başındaki sayıları temizle (002. vb)
+                personel = re.sub(r'^\d+\.\s*', '', personel)
 
             # Durum Kontrolü
             if "SİSTEM KAPATILDI" in satir_metni: # Mağaza Açıldı
@@ -112,7 +153,7 @@ def process_html_to_excel(html_content):
                 sube_verileri[aktif_sube]["kapanis_saat"] = saat
                 sube_verileri[aktif_sube]["kapanis_kisi"] = personel
 
-    # Excel Oluşturma (OpenPyXL)
+    # --- EXCEL OLUŞTURMA ---
     wb = Workbook()
     ws = wb.active
     ws.title = "Happy Center Rapor"
@@ -122,18 +163,22 @@ def process_html_to_excel(html_content):
     header_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid") # SARI
     bold_font = Font(bold=True, name='Calibri', size=11)
     title_font = Font(bold=True, name='Calibri', size=14)
+    center_align = Alignment(horizontal='center', vertical='center')
 
     # Başlık Alanı
     ws.merge_cells('B1:H1')
     ws['B1'] = "HAPPY CENTER ŞUBELERİN AÇILIŞ KAPANIŞ SAATLERİ"
     ws['B1'].font = title_font
-    ws['B1'].alignment = Alignment(horizontal='center', vertical='center')
+    ws['B1'].alignment = center_align
 
-    bugun = datetime.now().strftime("%d.%m.%Y")
+    # TARİH BAŞLIĞI (Dinamik)
+    # Eğer HTML'den tarih bulduysa onu kullan, bulamazsa bugünü kullan
+    tarih_str = rapor_tarihi_html if rapor_tarihi_html else datetime.now().strftime("%d.%m.%Y")
+    
     ws.merge_cells('B2:H2')
-    ws['B2'] = f"{bugun} HAPPY CENTER MAĞAZA AÇILIŞ VE KAPANIŞLARI"
+    ws['B2'] = f"{tarih_str} HAPPY CENTER MAĞAZA AÇILIŞ VE KAPANIŞLARI"
     ws['B2'].font = bold_font
-    ws['B2'].alignment = Alignment(horizontal='center', vertical='center')
+    ws['B2'].alignment = center_align
 
     # Tablo Başlıkları
     headers_config = [
@@ -150,7 +195,7 @@ def process_html_to_excel(html_content):
         cell.value = val
         cell.fill = header_fill
         cell.font = bold_font
-        cell.alignment = Alignment(horizontal='center', vertical='center')
+        cell.alignment = center_align
         cell.border = thin_border
 
     # Başlık Kenarlıkları Tamamlama
@@ -165,23 +210,39 @@ def process_html_to_excel(html_content):
     for sube in sorted_subeler:
         data = sube_verileri[sube]
         
-        # Sıra No
-        ws.cell(row=start_row, column=1, value=sira_no).border = thin_border
+        # SIRA NO
+        c = ws.cell(row=start_row, column=1, value=sira_no)
+        c.border = thin_border
+        c.alignment = center_align
         
-        # Şube
+        # ŞUBE ADI
         c = ws.cell(row=start_row, column=2, value=sube)
-        c.font = bold_font; c.border = thin_border
+        c.font = bold_font
+        c.border = thin_border
 
-        # Açılış
-        ws.cell(row=start_row, column=3, value=data['acilis_saat']).border = thin_border
-        c = ws.cell(row=start_row, column=4, value=data['acilis_kisi'])
-        c.font = Font(color="006100"); c.border = thin_border
-
-        # Kapanış
-        ws.cell(row=start_row, column=5, value=data['kapanis_saat']).border = thin_border
-        ws.cell(row=start_row, column=6, value=data['kapanis_kisi']).border = thin_border
+        # AÇILIŞ SAAT (Yeşil & Ortalı)
+        c = ws.cell(row=start_row, column=3, value=data['acilis_saat'])
+        c.font = Font(color="006100") 
+        c.alignment = center_align
+        c.border = thin_border
         
-        # Açıklama
+        # AÇILIŞ PERSONEL (Yeşil)
+        c = ws.cell(row=start_row, column=4, value=data['acilis_kisi'])
+        c.font = Font(color="006100")
+        c.border = thin_border
+
+        # KAPANIŞ SAAT (Lacivert & Ortalı)
+        c = ws.cell(row=start_row, column=5, value=data['kapanis_saat'])
+        c.font = Font(color="000080")
+        c.alignment = center_align
+        c.border = thin_border
+        
+        # KAPANIŞ PERSONEL (Lacivert)
+        c = ws.cell(row=start_row, column=6, value=data['kapanis_kisi'])
+        c.font = Font(color="000080")
+        c.border = thin_border
+        
+        # AÇIKLAMA
         ws.cell(row=start_row, column=7, value="").border = thin_border
 
         start_row += 1
@@ -217,6 +278,7 @@ def index():
             return send_file(
                 excel_file, 
                 as_attachment=True, 
+                # Dosya adını da dinamik yapabiliriz ama şimdilik "Rapor_Tarih" formatında kalsın
                 download_name=f"Happy_Center_Rapor_{datetime.now().strftime('%d_%m')}.xlsx",
                 mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             )
@@ -226,7 +288,4 @@ def index():
     return render_template_string(HTML_TEMPLATE)
 
 if __name__ == '__main__':
-    # host='0.0.0.0' sayesinde ağdaki diğer bilgisayarlar sana erişebilir.
-    # port=5000 standart flask portudur.
-    print(f"Uygulama çalışıyor! Tarayıcıdan şu adrese gidin: http://10.10.6.176:5000")
-    app.run(host='0.0.0.0', port=9595, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
