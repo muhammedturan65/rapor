@@ -86,12 +86,11 @@ def process_html_to_excel(html_content):
     aktif_sube = None
     rapor_tarihi_html = None
 
-    # HTML Veri Çekme İşlemi
+    # HTML Veri Çekme
     for satir in satirlar:
         satir_metni = satir.get_text(" ", strip=True)
         hucreler = satir.find_all('td')
 
-        # Tarih Bul
         if "Rapor Tarihi" in satir_metni:
             for td in hucreler:
                 txt = td.get_text(strip=True)
@@ -100,7 +99,6 @@ def process_html_to_excel(html_content):
                     break
             continue
 
-        # Şube Bul
         if "Firma Ünvanı" in satir_metni:
             for td in hucreler:
                 txt = td.get_text(strip=True)
@@ -115,7 +113,6 @@ def process_html_to_excel(html_content):
                 txt = genis_hucre.get_text(strip=True)
                 if txt: aktif_sube = txt
 
-        # Veri Bul
         if aktif_sube and ("SİSTEM KAPATILDI" in satir_metni or "SİSTEM KURULDU" in satir_metni):
             if aktif_sube not in sube_verileri:
                 sube_verileri[aktif_sube] = {"acilis_saat": "", "acilis_kisi": "", "kapanis_saat": "", "kapanis_kisi": ""}
@@ -142,12 +139,11 @@ def process_html_to_excel(html_content):
                 sube_verileri[aktif_sube]["kapanis_saat"] = saat
                 sube_verileri[aktif_sube]["kapanis_kisi"] = personel
 
-    # --- EXCEL OLUŞTURMA VE TASARIM ---
+    # --- EXCEL TASARIMI ---
     wb = Workbook()
     ws = wb.active
     ws.title = "Happy Center Rapor"
 
-    # Fontlar
     font_main_title = Font(name='Calibri', size=14, bold=True)
     font_header = Font(name='Calibri', size=12, bold=True)
     font_branch = Font(name='Calibri', size=16, bold=True)
@@ -159,25 +155,30 @@ def process_html_to_excel(html_content):
     header_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
     center_align = Alignment(horizontal='center', vertical='center')
 
-    # --- LOGO EKLEME ---
-    # Logoların net sığması için 1. satır yüksekliğini artırıyoruz (70px yeterli)
-    ws.row_dimensions[1].height = 70 
+    # --- LOGO EKLEME (Vercel Uyumlu Path) ---
+    ws.row_dimensions[1].height = 70
     
-    if os.path.exists('logo.png'):
+    # app.py'nin olduğu klasörü buluyoruz
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    logo_path = os.path.join(base_dir, 'logo.png')
+
+    if os.path.exists(logo_path):
         try:
-            # Sol Logo (A1)
-            img1 = XLImage('logo.png')
+            # Sol Logo
+            img1 = XLImage(logo_path)
             img1.width = 264
             img1.height = 65
             ws.add_image(img1, 'A1')
             
-            # Sağ Logo (G1)
-            img2 = XLImage('logo.png')
+            # Sağ Logo
+            img2 = XLImage(logo_path)
             img2.width = 264
             img2.height = 65
             ws.add_image(img2, 'G1')
         except Exception as e:
-            print(f"Logo eklenirken hata: {e}")
+            print(f"Logo Hatası: {e}")
+    else:
+        print(f"Logo bulunamadı: {logo_path}")
 
     # Ana Başlık
     ws.merge_cells('B1:F1')
@@ -185,16 +186,15 @@ def process_html_to_excel(html_content):
     ws['B1'].font = font_main_title
     ws['B1'].alignment = center_align
 
-    # Tarih Satırı
+    # Tarih
     tarih_str = rapor_tarihi_html if rapor_tarihi_html else datetime.now().strftime("%d.%m.%Y")
     ws.merge_cells('B2:F2')
     ws['B2'] = f"{tarih_str} HAPPY CENTER MAĞAZA AÇILIŞ VE KAPANIŞLARI"
     ws['B2'].font = font_header
     ws['B2'].alignment = center_align
-    # 2. Satır Yüksekliği (Eski ölçüyle bırakabiliriz veya standart)
     ws.row_dimensions[2].height = 26.25 
 
-    # Tablo Başlıkları
+    # Başlıklar
     headers_config = [
         ('A4:A5', 'SIRA NO'),
         ('B4:B5', 'ŞUBE ADI'),
@@ -212,23 +212,18 @@ def process_html_to_excel(html_content):
         cell.alignment = center_align
         cell.border = thin_border
     
-    # Başlık Satır Yükseklikleri (İsteğin: 15.75)
     ws.row_dimensions[4].height = 15.75
     ws.row_dimensions[5].height = 15.75
-
-    # Kenarlıklar
     for r in ws['A4:G5']:
         for c in r: c.border = thin_border
 
-    # Verileri Yazdırma
+    # Verileri Yaz
     start_row = 6
     sira_no = 1
     sorted_subeler = sorted(sube_verileri.keys())
 
     for sube in sorted_subeler:
         data = sube_verileri[sube]
-        
-        # SATIR YÜKSEKLİĞİ (İsteğin: 15.75)
         ws.row_dimensions[start_row].height = 15.75
         
         # 1. Sıra No
@@ -274,14 +269,14 @@ def process_html_to_excel(html_content):
         start_row += 1
         sira_no += 1
 
-    # SÜTUN GENİŞLİKLERİ (Güncel Ölçüler)
-    ws.column_dimensions['A'].width = 8.43    # GÜNCELLENDİ (Sıra No)
-    ws.column_dimensions['B'].width = 42      # Şube Adı
-    ws.column_dimensions['C'].width = 9.14    # Saat
-    ws.column_dimensions['D'].width = 29      # Şubeyi Açan
-    ws.column_dimensions['E'].width = 9.14    # Saat
-    ws.column_dimensions['F'].width = 32      # Şubeyi Kapatan
-    ws.column_dimensions['G'].width = 68.86   # Açıklama
+    # Sütun Genişlikleri
+    ws.column_dimensions['A'].width = 8.43
+    ws.column_dimensions['B'].width = 42
+    ws.column_dimensions['C'].width = 9.14
+    ws.column_dimensions['D'].width = 29
+    ws.column_dimensions['E'].width = 9.14
+    ws.column_dimensions['F'].width = 32
+    ws.column_dimensions['G'].width = 68.86
 
     output = io.BytesIO()
     wb.save(output)
