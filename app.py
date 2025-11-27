@@ -1,14 +1,16 @@
 import io
 import re
+import os
 from datetime import datetime
 from flask import Flask, request, send_file, render_template_string
 from bs4 import BeautifulSoup
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.drawing.image import Image as XLImage
 
 app = Flask(__name__)
 
-# --- GÖRSEL ARAYÜZ (HTML/CSS) ---
+# --- GÖRSEL ARAYÜZ ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="tr">
@@ -17,7 +19,7 @@ HTML_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Happy Center Rapor Sistemi</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f9; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        body { font-family: 'Calibri', sans-serif; background-color: #f4f4f9; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
         .container { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; width: 450px; }
         h1 { color: #e67e22; margin: 0; font-size: 32px; }
         h2 { color: #555; margin-top: 5px; font-size: 18px; font-weight: normal;}
@@ -38,7 +40,8 @@ HTML_TEMPLATE = """
         <h2>Şube Açılış/Kapanış Raporu</h2>
         
         <div class="info">
-            Sisteme sadece HTML dosyasını yükleyin, Excel otomatik oluşacaktır.
+            Not: 'logo.png' dosyası sistemde yüklüyse raporda çıkacaktır.<br>
+            Logo Boyutu: 264x65px olarak ayarlanmıştır.
         </div>
 
         <form action="/" method="post" enctype="multipart/form-data">
@@ -55,59 +58,49 @@ HTML_TEMPLATE = """
 </html>
 """
 
-# --- YARDIMCI FONKSİYON: Türkçe Tarih Çevirici ---
+# --- YARDIMCI FONKSİYONLAR ---
 def tarihi_formatla(tarih_metni):
-    """ '26 Kasım 2025' formatındaki metni '26.11.2025' formatına çevirir """
     try:
         aylar = {
             "Ocak": "01", "Şubat": "02", "Mart": "03", "Nisan": "04", "Mayıs": "05", "Haziran": "06",
-            "Temmuz": "07", "Ağustos": "08", "Eylül": "09", "Ekim": "10", "Kasım": "11", "Aralık": "12",
-            "January": "01", "February": "02", "March": "03", "April": "04", "May": "05", "June": "06",
-            "July": "07", "August": "08", "September": "09", "October": "10", "November": "11", "December": "12"
+            "Temmuz": "07", "Ağustos": "08", "Eylül": "09", "Ekim": "10", "Kasım": "11", "Aralık": "12"
         }
-        
-        # Gereksiz boşluk ve iki nokta temizliği
         temiz_metin = tarih_metni.replace(":", "").strip()
-        parcalar = temiz_metin.split() # ['26', 'Kasım', '2025']
-        
+        parcalar = temiz_metin.split()
         if len(parcalar) >= 3:
-            gun = parcalar[0].zfill(2) # 2 -> 02 yapar
+            gun = parcalar[0].zfill(2)
             ay_isim = parcalar[1]
             yil = parcalar[2]
-            
             ay_no = aylar.get(ay_isim, "00")
             if ay_no != "00":
                 return f"{gun}.{ay_no}.{yil}"
-        
-        return temiz_metin # Çeviremezse olduğu gibi dönsün
+        return temiz_metin
     except:
         return tarih_metni
 
-# --- PYTHON MANTIĞI (EXCEL OLUŞTURMA) ---
 def process_html_to_excel(html_content):
     soup = BeautifulSoup(html_content, 'html.parser')
     satirlar = soup.find_all('tr')
     
     sube_verileri = {}
     aktif_sube = None
-    rapor_tarihi_html = None # HTML'den çekilecek tarih
+    rapor_tarihi_html = None
 
-    # HTML Analizi
+    # HTML Veri Çekme İşlemi
     for satir in satirlar:
         satir_metni = satir.get_text(" ", strip=True)
         hucreler = satir.find_all('td')
 
-        # --- 0. TARİH BULMA ---
+        # Tarih Bul
         if "Rapor Tarihi" in satir_metni:
             for td in hucreler:
                 txt = td.get_text(strip=True)
-                # 'Rapor Tarihi' yazısı olmayan ama dolu olan hücre tarihtir
                 if txt and "Rapor Tarihi" not in txt:
-                    rapor_tarihi_html = tarihi_formatla(txt) # 26.11.2025'e çevir
+                    rapor_tarihi_html = tarihi_formatla(txt)
                     break
             continue
 
-        # --- 1. ŞUBE BULMA ---
+        # Şube Bul
         if "Firma Ünvanı" in satir_metni:
             for td in hucreler:
                 txt = td.get_text(strip=True)
@@ -122,16 +115,14 @@ def process_html_to_excel(html_content):
                 txt = genis_hucre.get_text(strip=True)
                 if txt: aktif_sube = txt
 
-        # --- 2. VERİ İŞLEME ---
+        # Veri Bul
         if aktif_sube and ("SİSTEM KAPATILDI" in satir_metni or "SİSTEM KURULDU" in satir_metni):
             if aktif_sube not in sube_verileri:
                 sube_verileri[aktif_sube] = {"acilis_saat": "", "acilis_kisi": "", "kapanis_saat": "", "kapanis_kisi": ""}
 
-            # Saat Bulma
             saat_match = re.search(r'\b([0-9]{1,2}):([0-9]{2})\b', satir_metni)
             saat = saat_match.group(0) if saat_match else ""
 
-            # Personel Bulma ve Temizleme
             ham_veri = ""
             for td in hucreler:
                 if "SİSTEM" in td.get_text():
@@ -142,43 +133,66 @@ def process_html_to_excel(html_content):
             personel = ""
             if "SİSTEM" in ham_veri:
                 personel = ham_veri.split("SİSTEM")[0].strip(" .")
-                # İsim başındaki sayıları temizle (002. vb)
                 personel = re.sub(r'^\d+\.\s*', '', personel)
 
-            # Durum Kontrolü
-            if "SİSTEM KAPATILDI" in satir_metni: # Mağaza Açıldı
+            if "SİSTEM KAPATILDI" in satir_metni:
                 sube_verileri[aktif_sube]["acilis_saat"] = saat
                 sube_verileri[aktif_sube]["acilis_kisi"] = personel
-            elif "SİSTEM KURULDU" in satir_metni: # Mağaza Kapandı
+            elif "SİSTEM KURULDU" in satir_metni:
                 sube_verileri[aktif_sube]["kapanis_saat"] = saat
                 sube_verileri[aktif_sube]["kapanis_kisi"] = personel
 
-    # --- EXCEL OLUŞTURMA ---
+    # --- EXCEL OLUŞTURMA VE TASARIM ---
     wb = Workbook()
     ws = wb.active
     ws.title = "Happy Center Rapor"
 
-    # Stiller
+    # Fontlar
+    font_main_title = Font(name='Calibri', size=14, bold=True)
+    font_header = Font(name='Calibri', size=12, bold=True)
+    font_branch = Font(name='Calibri', size=16, bold=True)
+    font_normal = Font(name='Calibri', size=12)
+    font_acilis = Font(name='Calibri', size=12, color="006100")
+    font_kapanis = Font(name='Calibri', size=12, color="000080")
+
     thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
-    header_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid") # SARI
-    bold_font = Font(bold=True, name='Calibri', size=11)
-    title_font = Font(bold=True, name='Calibri', size=14)
+    header_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
     center_align = Alignment(horizontal='center', vertical='center')
 
-    # Başlık Alanı
-    ws.merge_cells('B1:H1')
+    # --- LOGO EKLEME ---
+    # Logoların net sığması için 1. satır yüksekliğini artırıyoruz (70px yeterli)
+    ws.row_dimensions[1].height = 70 
+    
+    if os.path.exists('logo.png'):
+        try:
+            # Sol Logo (A1)
+            img1 = XLImage('logo.png')
+            img1.width = 264
+            img1.height = 65
+            ws.add_image(img1, 'A1')
+            
+            # Sağ Logo (G1)
+            img2 = XLImage('logo.png')
+            img2.width = 264
+            img2.height = 65
+            ws.add_image(img2, 'G1')
+        except Exception as e:
+            print(f"Logo eklenirken hata: {e}")
+
+    # Ana Başlık
+    ws.merge_cells('B1:F1')
     ws['B1'] = "HAPPY CENTER ŞUBELERİN AÇILIŞ KAPANIŞ SAATLERİ"
-    ws['B1'].font = title_font
+    ws['B1'].font = font_main_title
     ws['B1'].alignment = center_align
 
-    # TARİH BAŞLIĞI (Dinamik)
-    # Eğer HTML'den tarih bulduysa onu kullan, bulamazsa bugünü kullan
+    # Tarih Satırı
     tarih_str = rapor_tarihi_html if rapor_tarihi_html else datetime.now().strftime("%d.%m.%Y")
-    
-    ws.merge_cells('B2:H2')
+    ws.merge_cells('B2:F2')
     ws['B2'] = f"{tarih_str} HAPPY CENTER MAĞAZA AÇILIŞ VE KAPANIŞLARI"
-    ws['B2'].font = bold_font
+    ws['B2'].font = font_header
     ws['B2'].alignment = center_align
+    # 2. Satır Yüksekliği (Eski ölçüyle bırakabiliriz veya standart)
+    ws.row_dimensions[2].height = 26.25 
 
     # Tablo Başlıkları
     headers_config = [
@@ -194,11 +208,15 @@ def process_html_to_excel(html_content):
         cell = ws[rng.split(':')[0]]
         cell.value = val
         cell.fill = header_fill
-        cell.font = bold_font
+        cell.font = font_header
         cell.alignment = center_align
         cell.border = thin_border
+    
+    # Başlık Satır Yükseklikleri (İsteğin: 15.75)
+    ws.row_dimensions[4].height = 15.75
+    ws.row_dimensions[5].height = 15.75
 
-    # Başlık Kenarlıkları Tamamlama
+    # Kenarlıklar
     for r in ws['A4:G5']:
         for c in r: c.border = thin_border
 
@@ -210,81 +228,79 @@ def process_html_to_excel(html_content):
     for sube in sorted_subeler:
         data = sube_verileri[sube]
         
-        # SIRA NO
+        # SATIR YÜKSEKLİĞİ (İsteğin: 15.75)
+        ws.row_dimensions[start_row].height = 15.75
+        
+        # 1. Sıra No
         c = ws.cell(row=start_row, column=1, value=sira_no)
+        c.font = font_normal
         c.border = thin_border
         c.alignment = center_align
         
-        # ŞUBE ADI
+        # 2. Şube Adı
         c = ws.cell(row=start_row, column=2, value=sube)
-        c.font = bold_font
+        c.font = font_branch
         c.border = thin_border
+        c.alignment = Alignment(vertical='center', indent=1)
 
-        # AÇILIŞ SAAT (Yeşil & Ortalı)
+        # 3. Açılış Saat
         c = ws.cell(row=start_row, column=3, value=data['acilis_saat'])
-        c.font = Font(color="006100") 
+        c.font = font_acilis
         c.alignment = center_align
         c.border = thin_border
         
-        # AÇILIŞ PERSONEL (Yeşil)
+        # 4. Açılış Personel
         c = ws.cell(row=start_row, column=4, value=data['acilis_kisi'])
-        c.font = Font(color="006100")
+        c.font = font_acilis
         c.border = thin_border
+        c.alignment = Alignment(vertical='center', indent=1)
 
-        # KAPANIŞ SAAT (Lacivert & Ortalı)
+        # 5. Kapanış Saat
         c = ws.cell(row=start_row, column=5, value=data['kapanis_saat'])
-        c.font = Font(color="000080")
+        c.font = font_kapanis
         c.alignment = center_align
         c.border = thin_border
         
-        # KAPANIŞ PERSONEL (Lacivert)
+        # 6. Kapanış Personel
         c = ws.cell(row=start_row, column=6, value=data['kapanis_kisi'])
-        c.font = Font(color="000080")
+        c.font = font_kapanis
         c.border = thin_border
+        c.alignment = Alignment(vertical='center', indent=1)
         
-        # AÇIKLAMA
-        ws.cell(row=start_row, column=7, value="").border = thin_border
+        # 7. Açıklama
+        c = ws.cell(row=start_row, column=7, value="")
+        c.border = thin_border
 
         start_row += 1
         sira_no += 1
 
-    # Genişlik Ayarları
-    ws.column_dimensions['A'].width = 8
-    ws.column_dimensions['B'].width = 25
-    ws.column_dimensions['C'].width = 10
-    ws.column_dimensions['D'].width = 30
-    ws.column_dimensions['E'].width = 10
-    ws.column_dimensions['F'].width = 30
-    ws.column_dimensions['G'].width = 15
+    # SÜTUN GENİŞLİKLERİ (Güncel Ölçüler)
+    ws.column_dimensions['A'].width = 8.43    # GÜNCELLENDİ (Sıra No)
+    ws.column_dimensions['B'].width = 42      # Şube Adı
+    ws.column_dimensions['C'].width = 9.14    # Saat
+    ws.column_dimensions['D'].width = 29      # Şubeyi Açan
+    ws.column_dimensions['E'].width = 9.14    # Saat
+    ws.column_dimensions['F'].width = 32      # Şubeyi Kapatan
+    ws.column_dimensions['G'].width = 68.86   # Açıklama
 
-    # Belleğe kaydetme
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
     return output
 
-# --- FLASK BAŞLATMA ---
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
         file = request.files.get('file')
         if not file or file.filename == '':
             return "Lütfen bir dosya seçin!", 400
-        
         try:
             html_content = file.read().decode('utf-8')
             excel_file = process_html_to_excel(html_content)
-            
-            return send_file(
-                excel_file, 
-                as_attachment=True, 
-                # Dosya adını da dinamik yapabiliriz ama şimdilik "Rapor_Tarih" formatında kalsın
-                download_name=f"Happy_Center_Rapor_{datetime.now().strftime('%d_%m')}.xlsx",
-                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            )
+            dosya_adi = f"Happy_Center_Rapor_{datetime.now().strftime('%d_%m_%Y')}.xlsx"
+            return send_file(excel_file, as_attachment=True, download_name=dosya_adi, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         except Exception as e:
             return f"Bir hata oluştu: {str(e)}", 500
-
     return render_template_string(HTML_TEMPLATE)
 
 if __name__ == '__main__':
