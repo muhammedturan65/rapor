@@ -1,6 +1,7 @@
 import io
 import re
 import os
+import sys
 from datetime import datetime
 from flask import Flask, request, send_file, render_template_string
 from bs4 import BeautifulSoup
@@ -40,8 +41,8 @@ HTML_TEMPLATE = """
         <h2>Şube Açılış/Kapanış Raporu</h2>
         
         <div class="info">
-            Not: 'logo.png' dosyası sistemde yüklüyse raporda çıkacaktır.<br>
-            Logo Boyutu: 264x65px olarak ayarlanmıştır.
+            Logo: 264x65px (Otomatik Eklenir)<br>
+            Lütfen HTML dosyasını seçip dönüştürün.
         </div>
 
         <form action="/" method="post" enctype="multipart/form-data">
@@ -77,6 +78,20 @@ def tarihi_formatla(tarih_metni):
         return temiz_metin
     except:
         return tarih_metni
+
+# --- LOGO BULUCU ---
+def find_logo():
+    """Vercel dizinlerinde logoyu arar"""
+    possible_paths = [
+        'logo.png',
+        os.path.join(os.getcwd(), 'logo.png'),
+        os.path.join(os.path.dirname(__file__), 'logo.png'),
+        '/var/task/logo.png' # Vercel varsayılan yolu
+    ]
+    for path in possible_paths:
+        if os.path.exists(path):
+            return path
+    return None
 
 def process_html_to_excel(html_content):
     soup = BeautifulSoup(html_content, 'html.parser')
@@ -155,14 +170,12 @@ def process_html_to_excel(html_content):
     header_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
     center_align = Alignment(horizontal='center', vertical='center')
 
-    # --- LOGO EKLEME (Vercel Uyumlu Path) ---
+    # --- LOGO EKLEME ---
     ws.row_dimensions[1].height = 70
     
-    # app.py'nin olduğu klasörü buluyoruz
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    logo_path = os.path.join(base_dir, 'logo.png')
+    logo_path = find_logo() # Logoyu akıllıca ara
 
-    if os.path.exists(logo_path):
+    if logo_path:
         try:
             # Sol Logo
             img1 = XLImage(logo_path)
@@ -176,9 +189,12 @@ def process_html_to_excel(html_content):
             img2.height = 65
             ws.add_image(img2, 'G1')
         except Exception as e:
-            print(f"Logo Hatası: {e}")
+            print(f"Logo ekleme hatası: {e}")
+            # Hata olursa A1 hücresine not düş (Debug için)
+            # ws['A1'] = f"Logo Err: {str(e)}" 
     else:
-        print(f"Logo bulunamadı: {logo_path}")
+        print("Logo dosyası bulunamadı")
+        # ws['A1'] = "Logo Dosyası Yok"
 
     # Ana Başlık
     ws.merge_cells('B1:F1')
