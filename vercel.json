@@ -5,7 +5,7 @@
             "src": "app.py",
             "use": "@vercel/python",
             "config": {
-                "includeFiles": ["logo.png"]
+                "includeFiles": ["logo.png", "siralama.txt"]
             }
         }
     ],
