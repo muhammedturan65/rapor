@@ -41,8 +41,8 @@ HTML_TEMPLATE = """
         <h2>Şube Açılış/Kapanış Raporu</h2>
         
         <div class="info">
-            Özellik: Gelişmiş Eşleştirme Aktif<br>
-            (Tire, alt çizgi ve boşluk farklarını otomatik düzeltir.)
+            Özellik: Akıllı Eşleştirme Aktif<br>
+            (HTML isimlerini siralama.txt ile otomatik eşleştirir)
         </div>
 
         <form action="/" method="post" enctype="multipart/form-data">
@@ -79,21 +79,12 @@ def tarihi_formatla(tarih_metni):
     except:
         return tarih_metni
 
-# --- GÜNCELLENMİŞ AGRESiF NORMALİZASYON ---
 def normalize_tr(text):
-    """
-    Metni standartlaştırır:
-    1. Türkçe karakterleri İngilizceye çevirir.
-    2. Sadece harf ve rakamları tutar (Tire, Alt Çizgi, Boşluk hepsini siler).
-    Örn: "SEYRANTEPE-1" -> "SEYRANTEPE1"
-         "SEYRANTEPE_1" -> "SEYRANTEPE1"
-    """
+    """Sadece harf ve rakamları bırakır, Türkçe karakterleri çevirir."""
     if not text: return ""
-    # Türkçe karakter haritası
     tr_map = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
-    # Önce Türkçe karakterleri düzelt ve büyüt
     text = text.translate(tr_map).upper()
-    # Regex ile A-Z ve 0-9 dışındaki HER ŞEYİ sil (Boşluk, tire, alt çizgi gider)
+    # Harf ve Rakam dışındaki her şeyi sil (Tire, nokta, boşluk vb.)
     return re.sub(r'[^A-Z0-9]', '', text)
 
 def find_file(filename):
@@ -111,7 +102,9 @@ def find_file(filename):
 def get_sorting_data():
     path = find_file('siralama.txt')
     ordered_list = []
-    normalization_map = {}
+    # Norm Map: {"SEYRANTEPE1": "SEYRANTEPE_1", "HALKALI": "HALKALI", ...}
+    norm_map = {} 
+    
     if path:
         try:
             with open(path, 'r', encoding='utf-8') as f:
@@ -119,19 +112,76 @@ def get_sorting_data():
                     orijinal_isim = line.strip()
                     if orijinal_isim:
                         ordered_list.append(orijinal_isim)
-                        # Normalize edilmiş halini anahtar, orijinalini değer yap
-                        # Örn Key: "SEYRANTEPE1", Value: "SEYRANTEPE_1"
                         norm_key = normalize_tr(orijinal_isim)
-                        normalization_map[norm_key] = orijinal_isim
+                        norm_map[norm_key] = orijinal_isim
         except Exception as e:
             print(f"Sıralama dosyası okunamadı: {e}")
-    return ordered_list, normalization_map
+    return ordered_list, norm_map
+
+# --- EŞLEŞTİRME MOTORU ---
+def akilli_eslestir(html_name, norm_map):
+    """
+    HTML'den gelen ismi siralama.txt'deki isimlerle eşleştirmeye çalışır.
+    """
+    # 1. HTML ismini temizle (Örn: "SEYRANTEPE-1" -> "SEYRANTEPE1")
+    h_norm = normalize_tr(html_name)
+    
+    # 2. ÖZEL DÜZELTMELER (Manual Mapping)
+    # Senin verdiğin örneklerdeki uyuşmazlıkları elle bağlıyoruz
+    # Key: HTML'den gelen (Normalize edilmiş), Value: siralama.txt'deki (Normalize edilmiş)
+    manual_fixes = {
+        "BESYUZEVLER1": "BESYUZEVLER",
+        "KUCUKCEKMECE": "CEKMECE",
+        "HALKALI1": "HALKALI",
+        "CUMHURIYET": "CUMHURRIYET",
+        "BEYKENT1": "BEYKENT",
+        "ZUMRUTEVLER1": "ZUMRUTEVELER",
+        "ORNEKMAH1": "ORNEKMAHALLESI",
+        "EYUPISLAMBEY": "EYUP2",
+        "ORNEKMAH2": "ORNEKMAHALLESI2",
+        "YENIETICARET": "YENIETICARETDEPO",
+        "IHLASMARMARA1": "ILHASMARMARA1",
+        "PARKMAVERA": "PARKMEVRA",
+        "UGURMUMCUADNANKHVCI": "UGURMUMCUADNANK",
+        "KURTKOYMILLETCAD": "KURTKOYMILLETCADDESI",
+        "BAHCELIEVLERYAYLA": "BEHCELIEVLERYAYLA",
+        "PASABAYIR": "PASABAYIR1",
+        "BIGA1": "BIGA",
+        "KARACABEY": "KARACABEY1",
+        "BALIKESIR": "BALIKESIR1",
+        "BANDIRMAMERKEZ": "BADIRMAMERKEZ",
+        "BALIKESIRRAMADA": "BALIKKESIRRAMADA",
+        "GONENKURTULUS": "GONENKUTULUS",
+        "IKBALALTUN": "IKBALALTUN"
+    }
+    
+    if h_norm in manual_fixes:
+        target_norm = manual_fixes[h_norm]
+        if target_norm in norm_map:
+            return norm_map[target_norm]
+
+    # 3. DOĞRUDAN EŞLEŞME
+    if h_norm in norm_map:
+        return norm_map[h_norm]
+    
+    # 4. KAPSAMA MANTIĞI (Fuzzy Match)
+    # "HALKALI1" (HTML) içinde "HALKALI" (TXT) var mı? Veya tam tersi.
+    for t_norm, t_original in norm_map.items():
+        # HTML ismi, TXT ismini kapsıyor mu? (Örn: HTML=BESYUZEVLER1, TXT=BESYUZEVLER)
+        if t_norm in h_norm and len(t_norm) > 3: 
+            return t_original
+        # TXT ismi, HTML ismini kapsıyor mu? (Örn: TXT=BALIKESIR1, HTML=BALIKESIR)
+        if h_norm in t_norm and len(h_norm) > 3:
+            return t_original
+
+    # 5. Eşleşme Yoksa Olduğu Gibi Döndür
+    return html_name
 
 def process_html_to_excel(html_content):
     soup = BeautifulSoup(html_content, 'html.parser')
     satirlar = soup.find_all('tr')
     
-    # 1. Sıralama verilerini al
+    # Sıralama verilerini al
     custom_order_list, norm_map = get_sorting_data()
     
     sube_verileri = {}
@@ -167,17 +217,9 @@ def process_html_to_excel(html_content):
 
         if aktif_sube and ("SİSTEM KAPATILDI" in satir_metni or "SİSTEM KURULDU" in satir_metni):
             
-            # --- AKILLI İSİM EŞLEŞTİRME ---
-            # HTML'den geleni normalize et (Örn: SEYRANTEPE-1 -> SEYRANTEPE1)
-            html_norm = normalize_tr(aktif_sube)
-            
-            # Listede var mı diye bak (Listede SEYRANTEPE_1 -> SEYRANTEPE1 olarak saklı)
-            if html_norm in norm_map:
-                # Varsa siralama.txt'deki ismini kullan
-                duzeltilmis_isim = norm_map[html_norm]
-            else:
-                # Yoksa HTML'den geleni kullan
-                duzeltilmis_isim = aktif_sube
+            # --- EŞLEŞTİRME FONKSİYONUNU ÇAĞIR ---
+            # HTML'den gelen ismi (aktif_sube), siralama.txt'deki karşılığına çevir
+            duzeltilmis_isim = akilli_eslestir(aktif_sube, norm_map)
 
             if duzeltilmis_isim not in sube_verileri:
                 sube_verileri[duzeltilmis_isim] = {"acilis_saat": "", "acilis_kisi": "", "kapanis_saat": "", "kapanis_kisi": ""}
@@ -204,19 +246,17 @@ def process_html_to_excel(html_content):
                 sube_verileri[duzeltilmis_isim]["kapanis_saat"] = saat
                 sube_verileri[duzeltilmis_isim]["kapanis_kisi"] = personel
 
-    # --- SIRALAMA LİSTESİNİ OLUŞTUR ---
+    # --- LİSTE OLUŞTURMA ---
     final_sorted_keys = []
     
-    # 1. siralama.txt'deki HER ŞUBEYİ ekle (Verisi olsa da olmasa da)
+    # 1. siralama.txt'deki TÜM şubeleri ekle
     if custom_order_list:
         final_sorted_keys = list(custom_order_list)
     
-    # 2. HTML'de olup da siralama.txt'de OLMAYANLARI en sona ekle
-    # (Burada da normalize kontrolü yapalım ki mükerrer eklemesin)
-    existing_normalized_keys = {normalize_tr(k) for k in final_sorted_keys}
-    
+    # 2. HTML'de olup listede OLMAYANLARI sona ekle (Normalizasyon kontrolüyle)
+    existing_norms = {normalize_tr(k) for k in final_sorted_keys}
     for sube_adi in sube_verileri:
-        if normalize_tr(sube_adi) not in existing_normalized_keys:
+        if normalize_tr(sube_adi) not in existing_norms:
             final_sorted_keys.append(sube_adi)
             
     if not final_sorted_keys:
