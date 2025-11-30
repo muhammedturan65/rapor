@@ -41,8 +41,8 @@ HTML_TEMPLATE = """
         <h2>Şube Açılış/Kapanış Raporu</h2>
         
         <div class="info">
-            Logo: 264x65px (Otomatik Eklenir)<br>
-            Lütfen HTML dosyasını seçip dönüştürün.
+            Sıralama: siralama.txt dosyasına göre yapılır.<br>
+            Logo: 264x65px (Otomatik Eklenir)
         </div>
 
         <form action="/" method="post" enctype="multipart/form-data">
@@ -79,19 +79,34 @@ def tarihi_formatla(tarih_metni):
     except:
         return tarih_metni
 
-# --- LOGO BULUCU ---
-def find_logo():
-    """Vercel dizinlerinde logoyu arar"""
+# --- DOSYA BULUCU (Logo ve txt için) ---
+def find_file(filename):
+    """Vercel dizinlerinde dosya arar"""
     possible_paths = [
-        'logo.png',
-        os.path.join(os.getcwd(), 'logo.png'),
-        os.path.join(os.path.dirname(__file__), 'logo.png'),
-        '/var/task/logo.png' # Vercel varsayılan yolu
+        filename,
+        os.path.join(os.getcwd(), filename),
+        os.path.join(os.path.dirname(__file__), filename),
+        f'/var/task/{filename}'
     ]
     for path in possible_paths:
         if os.path.exists(path):
             return path
     return None
+
+# --- SIRALAMA LİSTESİNİ OKU ---
+def get_sorting_list():
+    path = find_file('siralama.txt')
+    custom_order = []
+    if path:
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                # Satır satır oku, boşlukları temizle
+                custom_order = [line.strip() for line in f if line.strip()]
+        except Exception as e:
+            print(f"Sıralama dosyası okunamadı: {e}")
+    else:
+        print("siralama.txt bulunamadı, varsayılan (alfabetik) sıralama kullanılacak.")
+    return custom_order
 
 def process_html_to_excel(html_content):
     soup = BeautifulSoup(html_content, 'html.parser')
@@ -154,6 +169,20 @@ def process_html_to_excel(html_content):
                 sube_verileri[aktif_sube]["kapanis_saat"] = saat
                 sube_verileri[aktif_sube]["kapanis_kisi"] = personel
 
+    # --- ÖZEL SIRALAMA ALGORİTMASI ---
+    custom_order_list = get_sorting_list()
+    final_sorted_keys = []
+    
+    # 1. Önce listedeki sıraya göre olanları ekle
+    for sube_adi in custom_order_list:
+        if sube_adi in sube_verileri:
+            final_sorted_keys.append(sube_adi)
+    
+    # 2. Listede olmayan (yeni/ekstra) şubeleri sonuna ekle
+    for sube_adi in sube_verileri:
+        if sube_adi not in final_sorted_keys:
+            final_sorted_keys.append(sube_adi)
+
     # --- EXCEL TASARIMI ---
     wb = Workbook()
     ws = wb.active
@@ -172,8 +201,7 @@ def process_html_to_excel(html_content):
 
     # --- LOGO EKLEME ---
     ws.row_dimensions[1].height = 70
-    
-    logo_path = find_logo() # Logoyu akıllıca ara
+    logo_path = find_file('logo.png')
 
     if logo_path:
         try:
@@ -182,7 +210,6 @@ def process_html_to_excel(html_content):
             img1.width = 264
             img1.height = 65
             ws.add_image(img1, 'A1')
-            
             # Sağ Logo
             img2 = XLImage(logo_path)
             img2.width = 264
@@ -190,11 +217,8 @@ def process_html_to_excel(html_content):
             ws.add_image(img2, 'G1')
         except Exception as e:
             print(f"Logo ekleme hatası: {e}")
-            # Hata olursa A1 hücresine not düş (Debug için)
-            # ws['A1'] = f"Logo Err: {str(e)}" 
     else:
         print("Logo dosyası bulunamadı")
-        # ws['A1'] = "Logo Dosyası Yok"
 
     # Ana Başlık
     ws.merge_cells('B1:F1')
@@ -233,12 +257,11 @@ def process_html_to_excel(html_content):
     for r in ws['A4:G5']:
         for c in r: c.border = thin_border
 
-    # Verileri Yaz
+    # Verileri Yaz (Sıralanmış Liste Kullanılarak)
     start_row = 6
     sira_no = 1
-    sorted_subeler = sorted(sube_verileri.keys())
-
-    for sube in sorted_subeler:
+    
+    for sube in final_sorted_keys:
         data = sube_verileri[sube]
         ws.row_dimensions[start_row].height = 15.75
         
