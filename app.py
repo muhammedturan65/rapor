@@ -41,8 +41,8 @@ HTML_TEMPLATE = """
         <h2>Şube Açılış/Kapanış Raporu</h2>
         
         <div class="info">
-            Özellik: Akıllı İsim Eşleştirme Aktif<br>
-            (Örn: HTML'de 'BAHCESEHIR' -> Raporda 'BAHÇEŞEHİR')
+            Özellik: Sabit Sıralama Aktif<br>
+            (Verisi olmayan şubeler de listede boş olarak görünür.)
         </div>
 
         <form action="/" method="post" enctype="multipart/form-data">
@@ -79,20 +79,11 @@ def tarihi_formatla(tarih_metni):
     except:
         return tarih_metni
 
-# --- TÜRKÇE KARAKTER NORMALİZASYONU ---
 def normalize_tr(text):
-    """
-    Metni standartlaştırır: Türkçe karakterleri İngilizce karşılıklarına çevirir,
-    büyük harfe çevirir ve boşlukları temizler.
-    Örn: "BAHÇEŞEHİR " -> "BAHCESEHIR"
-    """
     if not text: return ""
-    # Türkçe karakter haritası
     tr_map = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
-    # Çevir, büyüt ve sağ-sol boşlukları sil
     return text.translate(tr_map).upper().strip()
 
-# --- DOSYA BULUCU ---
 def find_file(filename):
     possible_paths = [
         filename,
@@ -105,15 +96,10 @@ def find_file(filename):
             return path
     return None
 
-# --- SIRALAMA LİSTESİNİ OKU VE EŞLEŞTİRME SÖZLÜĞÜ OLUŞTUR ---
 def get_sorting_data():
     path = find_file('siralama.txt')
-    
-    # Sıralama listesi (Orijinal isimler)
     ordered_list = []
-    # Eşleştirme Haritası: {"BAHCESEHIR": "BAHÇEŞEHİR", "AMBARLI": "AMBARLI"}
     normalization_map = {}
-    
     if path:
         try:
             with open(path, 'r', encoding='utf-8') as f:
@@ -121,21 +107,16 @@ def get_sorting_data():
                     orijinal_isim = line.strip()
                     if orijinal_isim:
                         ordered_list.append(orijinal_isim)
-                        # Normalize edilmiş halini anahtar, orijinalini değer yap
                         norm_key = normalize_tr(orijinal_isim)
                         normalization_map[norm_key] = orijinal_isim
         except Exception as e:
             print(f"Sıralama dosyası okunamadı: {e}")
-    else:
-        print("siralama.txt bulunamadı.")
-        
     return ordered_list, normalization_map
 
 def process_html_to_excel(html_content):
     soup = BeautifulSoup(html_content, 'html.parser')
     satirlar = soup.find_all('tr')
     
-    # 1. Sıralama verilerini al
     custom_order_list, norm_map = get_sorting_data()
     
     sube_verileri = {}
@@ -170,17 +151,11 @@ def process_html_to_excel(html_content):
                 if txt: aktif_sube = txt
 
         if aktif_sube and ("SİSTEM KAPATILDI" in satir_metni or "SİSTEM KURULDU" in satir_metni):
-            
-            # --- AKILLI İSİM DÜZELTME ---
-            # HTML'den gelen ismi normalize et
             html_norm = normalize_tr(aktif_sube)
             
-            # Eğer bu isim bizim listemizde (normalize edilmiş olarak) varsa
             if html_norm in norm_map:
-                # Orijinal/Doğru ismi kullan (siralama.txt'den gelen)
                 duzeltilmis_isim = norm_map[html_norm]
             else:
-                # Listede yoksa HTML'den geleni kullan
                 duzeltilmis_isim = aktif_sube
 
             if duzeltilmis_isim not in sube_verileri:
@@ -208,18 +183,21 @@ def process_html_to_excel(html_content):
                 sube_verileri[duzeltilmis_isim]["kapanis_saat"] = saat
                 sube_verileri[duzeltilmis_isim]["kapanis_kisi"] = personel
 
-    # --- ÖZEL SIRALAMA ALGORİTMASI ---
+    # --- SIRALAMA MANTIĞI (GÜNCELLENDİ) ---
     final_sorted_keys = []
     
-    # 1. Önce listedeki sıraya göre olanları ekle
-    for sube_adi in custom_order_list:
-        if sube_adi in sube_verileri:
-            final_sorted_keys.append(sube_adi)
+    # 1. siralama.txt'deki HER ŞUBEYİ ekle (Verisi olsa da olmasa da)
+    if custom_order_list:
+        final_sorted_keys = list(custom_order_list)
     
-    # 2. Listede olmayan (yeni/ekstra) şubeleri sonuna ekle
+    # 2. HTML'de olup da siralama.txt'de OLMAYANLARI en sona ekle
     for sube_adi in sube_verileri:
         if sube_adi not in final_sorted_keys:
             final_sorted_keys.append(sube_adi)
+            
+    # Eğer siralama.txt yoksa veya boşsa, alfabetik sırala
+    if not final_sorted_keys:
+        final_sorted_keys = sorted(sube_verileri.keys())
 
     # --- EXCEL TASARIMI ---
     wb = Workbook()
@@ -237,10 +215,9 @@ def process_html_to_excel(html_content):
     header_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
     center_align = Alignment(horizontal='center', vertical='center')
 
-    # --- LOGO EKLEME ---
+    # Logo
     ws.row_dimensions[1].height = 70
     logo_path = find_file('logo.png')
-
     if logo_path:
         try:
             img1 = XLImage(logo_path); img1.width = 264; img1.height = 65
@@ -249,12 +226,13 @@ def process_html_to_excel(html_content):
             ws.add_image(img2, 'G1')
         except: pass
 
-    # Başlıklar ve Tarih
+    # Başlık
     ws.merge_cells('B1:F1')
     ws['B1'] = "HAPPY CENTER ŞUBELERİN AÇILIŞ KAPANIŞ SAATLERİ"
     ws['B1'].font = font_main_title
     ws['B1'].alignment = center_align
 
+    # Tarih
     tarih_str = rapor_tarihi_html if rapor_tarihi_html else datetime.now().strftime("%d.%m.%Y")
     ws.merge_cells('B2:F2')
     ws['B2'] = f"{tarih_str} HAPPY CENTER MAĞAZA AÇILIŞ VE KAPANIŞLARI"
@@ -284,28 +262,39 @@ def process_html_to_excel(html_content):
     sira_no = 1
     
     for sube in final_sorted_keys:
-        data = sube_verileri[sube]
+        # Eğer şube HTML'de yoksa, boş veri döndür (.get() metodu ile)
+        data = sube_verileri.get(sube, {
+            "acilis_saat": "", "acilis_kisi": "",
+            "kapanis_saat": "", "kapanis_kisi": ""
+        })
+        
         ws.row_dimensions[start_row].height = 15.75
         
-        # Sütunlar
+        # Sütun 1: Sıra No
         c = ws.cell(row=start_row, column=1, value=sira_no)
         c.font = font_normal; c.border = thin_border; c.alignment = center_align
         
+        # Sütun 2: Şube Adı
         c = ws.cell(row=start_row, column=2, value=sube)
         c.font = font_branch; c.border = thin_border; c.alignment = Alignment(vertical='center', indent=1)
 
+        # Sütun 3: Açılış Saat
         c = ws.cell(row=start_row, column=3, value=data['acilis_saat'])
         c.font = font_acilis; c.alignment = center_align; c.border = thin_border
         
+        # Sütun 4: Açılış Personel
         c = ws.cell(row=start_row, column=4, value=data['acilis_kisi'])
         c.font = font_acilis; c.border = thin_border; c.alignment = Alignment(vertical='center', indent=1)
 
+        # Sütun 5: Kapanış Saat
         c = ws.cell(row=start_row, column=5, value=data['kapanis_saat'])
         c.font = font_kapanis; c.alignment = center_align; c.border = thin_border
         
+        # Sütun 6: Kapanış Personel
         c = ws.cell(row=start_row, column=6, value=data['kapanis_kisi'])
         c.font = font_kapanis; c.border = thin_border; c.alignment = Alignment(vertical='center', indent=1)
         
+        # Sütun 7: Açıklama
         c = ws.cell(row=start_row, column=7, value="")
         c.border = thin_border
 
