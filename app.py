@@ -261,7 +261,7 @@ def process_html_to_excel(html_content):
     center_align = Alignment(horizontal='center', vertical='center')
 
     # Logo
-    ws.row_dimensions[1].height = 70
+    ws.row_dimensions[1].height = 48.75
     logo_path = find_file('logo.png')
     if logo_path:
         try:
