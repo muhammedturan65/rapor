@@ -41,8 +41,8 @@ HTML_TEMPLATE = """
         <h2>Şube Açılış/Kapanış Raporu</h2>
         
         <div class="info">
-            Özellik: Akıllı Eşleştirme Aktif<br>
-            (HTML isimlerini siralama.txt ile otomatik eşleştirir)
+            Özellikler: Akıllı Eşleştirme + Depo Renklendirme<br>
+            (Merkez Depolar mavi dolgulu, Sıra No kırmızı)
         </div>
 
         <form action="/" method="post" enctype="multipart/form-data">
@@ -80,11 +80,9 @@ def tarihi_formatla(tarih_metni):
         return tarih_metni
 
 def normalize_tr(text):
-    """Sadece harf ve rakamları bırakır, Türkçe karakterleri çevirir."""
     if not text: return ""
     tr_map = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
     text = text.translate(tr_map).upper()
-    # Harf ve Rakam dışındaki her şeyi sil (Tire, nokta, boşluk vb.)
     return re.sub(r'[^A-Z0-9]', '', text)
 
 def find_file(filename):
@@ -102,7 +100,6 @@ def find_file(filename):
 def get_sorting_data():
     path = find_file('siralama.txt')
     ordered_list = []
-    # Norm Map: {"SEYRANTEPE1": "SEYRANTEPE_1", "HALKALI": "HALKALI", ...}
     norm_map = {} 
     
     if path:
@@ -118,17 +115,10 @@ def get_sorting_data():
             print(f"Sıralama dosyası okunamadı: {e}")
     return ordered_list, norm_map
 
-# --- EŞLEŞTİRME MOTORU ---
 def akilli_eslestir(html_name, norm_map):
-    """
-    HTML'den gelen ismi siralama.txt'deki isimlerle eşleştirmeye çalışır.
-    """
-    # 1. HTML ismini temizle (Örn: "SEYRANTEPE-1" -> "SEYRANTEPE1")
     h_norm = normalize_tr(html_name)
     
-    # 2. ÖZEL DÜZELTMELER (Manual Mapping)
-    # Senin verdiğin örneklerdeki uyuşmazlıkları elle bağlıyoruz
-    # Key: HTML'den gelen (Normalize edilmiş), Value: siralama.txt'deki (Normalize edilmiş)
+    # Senin belirlediğin özel düzeltmeler
     manual_fixes = {
         "BESYUZEVLER1": "BESYUZEVLER",
         "KUCUKCEKMECE": "CEKMECE",
@@ -160,28 +150,21 @@ def akilli_eslestir(html_name, norm_map):
         if target_norm in norm_map:
             return norm_map[target_norm]
 
-    # 3. DOĞRUDAN EŞLEŞME
     if h_norm in norm_map:
         return norm_map[h_norm]
     
-    # 4. KAPSAMA MANTIĞI (Fuzzy Match)
-    # "HALKALI1" (HTML) içinde "HALKALI" (TXT) var mı? Veya tam tersi.
     for t_norm, t_original in norm_map.items():
-        # HTML ismi, TXT ismini kapsıyor mu? (Örn: HTML=BESYUZEVLER1, TXT=BESYUZEVLER)
         if t_norm in h_norm and len(t_norm) > 3: 
             return t_original
-        # TXT ismi, HTML ismini kapsıyor mu? (Örn: TXT=BALIKESIR1, HTML=BALIKESIR)
         if h_norm in t_norm and len(h_norm) > 3:
             return t_original
 
-    # 5. Eşleşme Yoksa Olduğu Gibi Döndür
     return html_name
 
 def process_html_to_excel(html_content):
     soup = BeautifulSoup(html_content, 'html.parser')
     satirlar = soup.find_all('tr')
     
-    # Sıralama verilerini al
     custom_order_list, norm_map = get_sorting_data()
     
     sube_verileri = {}
@@ -216,9 +199,6 @@ def process_html_to_excel(html_content):
                 if txt: aktif_sube = txt
 
         if aktif_sube and ("SİSTEM KAPATILDI" in satir_metni or "SİSTEM KURULDU" in satir_metni):
-            
-            # --- EŞLEŞTİRME FONKSİYONUNU ÇAĞIR ---
-            # HTML'den gelen ismi (aktif_sube), siralama.txt'deki karşılığına çevir
             duzeltilmis_isim = akilli_eslestir(aktif_sube, norm_map)
 
             if duzeltilmis_isim not in sube_verileri:
@@ -248,12 +228,9 @@ def process_html_to_excel(html_content):
 
     # --- LİSTE OLUŞTURMA ---
     final_sorted_keys = []
-    
-    # 1. siralama.txt'deki TÜM şubeleri ekle
     if custom_order_list:
         final_sorted_keys = list(custom_order_list)
     
-    # 2. HTML'de olup listede OLMAYANLARI sona ekle (Normalizasyon kontrolüyle)
     existing_norms = {normalize_tr(k) for k in final_sorted_keys}
     for sube_adi in sube_verileri:
         if normalize_tr(sube_adi) not in existing_norms:
@@ -267,12 +244,17 @@ def process_html_to_excel(html_content):
     ws = wb.active
     ws.title = "Happy Center Rapor"
 
+    # FONTLAR VE STİLLER
     font_main_title = Font(name='Calibri', size=14, bold=True)
     font_header = Font(name='Calibri', size=12, bold=True)
     font_branch = Font(name='Calibri', size=16, bold=True)
     font_normal = Font(name='Calibri', size=12)
     font_acilis = Font(name='Calibri', size=12, color="006100")
     font_kapanis = Font(name='Calibri', size=12, color="000080")
+    
+    # YENİ EKLENEN STİLLER
+    font_sira_no = Font(name='Calibri', size=12, color="FF0000") # Kırmızı Sıra No
+    blue_fill = PatternFill(start_color="5B9BD5", end_color="5B9BD5", fill_type="solid") # Merkez Depo Mavisi
 
     thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
     header_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
@@ -324,6 +306,9 @@ def process_html_to_excel(html_content):
     start_row = 6
     sira_no = 1
     
+    # Özel renklendirilecek şubeler listesi
+    ozel_subeler = ["MERKEZ DEPO", "MERKEZ DEPO MUTFAK", "MERKEZ DEPO_2"]
+    
     for sube in final_sorted_keys:
         data = sube_verileri.get(sube, {
             "acilis_saat": "", "acilis_kisi": "",
@@ -332,24 +317,48 @@ def process_html_to_excel(html_content):
         
         ws.row_dimensions[start_row].height = 15.75
         
+        # Sütun 1: Sıra No (KIRMIZI FONT)
         c = ws.cell(row=start_row, column=1, value=sira_no)
-        c.font = font_normal; c.border = thin_border; c.alignment = center_align
+        c.font = font_sira_no 
+        c.border = thin_border
+        c.alignment = center_align
         
+        # Sütun 2: Şube Adı
         c = ws.cell(row=start_row, column=2, value=sube)
-        c.font = font_branch; c.border = thin_border; c.alignment = Alignment(vertical='center', indent=1)
+        c.font = font_branch
+        c.border = thin_border
+        c.alignment = Alignment(vertical='center', indent=1)
 
+        # Bu satır özel şube mi?
+        is_merkez = sube in ozel_subeler
+
+        # Sütun 3: Açılış Saat (Özel ise Mavi Dolgu)
         c = ws.cell(row=start_row, column=3, value=data['acilis_saat'])
-        c.font = font_acilis; c.alignment = center_align; c.border = thin_border
-        
-        c = ws.cell(row=start_row, column=4, value=data['acilis_kisi'])
-        c.font = font_acilis; c.border = thin_border; c.alignment = Alignment(vertical='center', indent=1)
+        c.font = font_acilis
+        c.alignment = center_align
+        c.border = thin_border
+        if is_merkez: c.fill = blue_fill # Mavi Dolgu
 
+        # Sütun 4: Açılış Personel
+        c = ws.cell(row=start_row, column=4, value=data['acilis_kisi'])
+        c.font = font_acilis
+        c.border = thin_border
+        c.alignment = Alignment(vertical='center', indent=1)
+
+        # Sütun 5: Kapanış Saat (Özel ise Mavi Dolgu)
         c = ws.cell(row=start_row, column=5, value=data['kapanis_saat'])
-        c.font = font_kapanis; c.alignment = center_align; c.border = thin_border
+        c.font = font_kapanis
+        c.alignment = center_align
+        c.border = thin_border
+        if is_merkez: c.fill = blue_fill # Mavi Dolgu
         
+        # Sütun 6: Kapanış Personel
         c = ws.cell(row=start_row, column=6, value=data['kapanis_kisi'])
-        c.font = font_kapanis; c.border = thin_border; c.alignment = Alignment(vertical='center', indent=1)
+        c.font = font_kapanis
+        c.border = thin_border
+        c.alignment = Alignment(vertical='center', indent=1)
         
+        # Sütun 7: Açıklama
         c = ws.cell(row=start_row, column=7, value="")
         c.border = thin_border
 
