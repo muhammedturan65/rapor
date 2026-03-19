@@ -198,7 +198,7 @@ def process_html_to_excel(html_content):
                 txt = genis_hucre.get_text(strip=True)
                 if txt: aktif_sube = txt
 
-        if aktif_sube and ("SİSTEM KAPATILDI" in satir_metni or "SİSTEM KURULDU" in satir_metni):
+        if aktif_sube and ("SİSTEM KAPATILDI" in satir_metni or "SİSTEM KURULDU" in satir_metni or "MAĞAZA AÇILDI" in satir_metni or "MAĞAZA KAPANDI" in satir_metni):
             duzeltilmis_isim = akilli_eslestir(aktif_sube, norm_map)
 
             if duzeltilmis_isim not in sube_verileri:
@@ -209,20 +209,28 @@ def process_html_to_excel(html_content):
 
             ham_veri = ""
             for td in hucreler:
-                if "SİSTEM" in td.get_text():
-                    ham_veri = td.get_text(strip=True)
+                txt_td = td.get_text(strip=True)
+                if "SİSTEM" in txt_td or "MAĞAZA" in txt_td:
+                    ham_veri = txt_td
                     break
             if not ham_veri: ham_veri = satir_metni
             
             personel = ""
-            if "SİSTEM" in ham_veri:
-                personel = ham_veri.split("SİSTEM")[0].strip(" .")
+            separator = ""
+            if "SİSTEM" in ham_veri: separator = "SİSTEM"
+            elif "MAĞAZA" in ham_veri: separator = "MAĞAZA"
+
+            if separator:
+                personel = ham_veri.split(separator)[0].strip(" .")
                 personel = re.sub(r'^\d+\.\s*', '', personel)
 
-            if "SİSTEM KAPATILDI" in satir_metni:
-                sube_verileri[duzeltilmis_isim]["acilis_saat"] = saat
-                sube_verileri[duzeltilmis_isim]["acilis_kisi"] = personel
-            elif "SİSTEM KURULDU" in satir_metni:
+            if "SİSTEM KAPATILDI" in satir_metni or "MAĞAZA AÇILDI" in satir_metni:
+                # İlk açılışı al: Eğer saat henüz kaydedilmemişse kaydet
+                if not sube_verileri[duzeltilmis_isim]["acilis_saat"]:
+                    sube_verileri[duzeltilmis_isim]["acilis_saat"] = saat
+                    sube_verileri[duzeltilmis_isim]["acilis_kisi"] = personel
+            elif "SİSTEM KURULDU" in satir_metni or "MAĞAZA KAPANDI" in satir_metni:
+                # Son kapanışı al: Her seferinde üzerine yaz, böylece en sonuncusu kalır
                 sube_verileri[duzeltilmis_isim]["kapanis_saat"] = saat
                 sube_verileri[duzeltilmis_isim]["kapanis_kisi"] = personel
 
