@@ -13,7 +13,7 @@ app = Flask(__name__)
 
 # --- BAKIM MODU AYARI ---
 # Bakımı açmak için True, kapatmak için False yapın.
-MAINTENANCE_MODE = True 
+MAINTENANCE_MODE = False 
 
 MAINTENANCE_HTML = """
 <!DOCTYPE html>
