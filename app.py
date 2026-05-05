@@ -17,11 +17,11 @@ MAINTENANCE_MODE = True
 
 MAINTENANCE_HTML = """
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistem Bakımı | Vercel Platform</title>
+    <title>System Maintenance | Vercel Platform</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #000; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
         .container { text-align: center; max-width: 600px; padding: 20px; }
@@ -45,27 +45,27 @@ MAINTENANCE_HTML = """
             <svg viewBox="0 0 76 65" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M37.5274 0L75.0548 65H0L37.5274 0Z" fill="white"/></svg>
         </div>
         <h1>Planned Maintenance in Progress</h1>
-        <p>Vercel platform altyapısında gerçekleştirilen planlı güncelleme çalışması nedeniyle bu uygulama geçici olarak erişime kapatılmıştır. Veri güvenliğiniz için işlemler duraklatılmıştır.</p>
+        <p>This application is temporarily unavailable due to scheduled infrastructure upgrades on the Vercel platform. Access to deployment services and associated databases is suspended to ensure data integrity during the migration process.</p>
         
         <div class="status-box">
             <div class="status-item">
                 <div class="dot orange"></div>
-                <div class="status-text"><strong>Platform:</strong> Vercel Edge Network Upgrade</div>
+                <div class="status-text"><strong>Platform:</strong> Vercel Edge Network Optimization</div>
             </div>
             <div class="status-item">
                 <div class="dot orange"></div>
-                <div class="status-text"><strong>Status:</strong> Migrating Database Clusters (Region: fra1)</div>
+                <div class="status-text"><strong>Status:</strong> Relocating Database Clusters (Region: fra1)</div>
             </div>
             <div class="status-item">
                 <div class="dot orange"></div>
-                <div class="status-text"><strong>Estimated Time:</strong> ~2 Hours</div>
+                <div class="status-text"><strong>Estimated Duration:</strong> ~120 Minutes</div>
             </div>
         </div>
 
-        <div class="code">Error Code: VERCEL_MAINTENANCE_FRA1_DEPLOYS</div>
+        <div class="code">Error Code: VERCEL_MAINTENANCE_FRA1_UPGRADE</div>
         
         <div class="footer">
-            &copy; 2026 Vercel Inc.
+            &copy; 2026 Vercel Inc. Infrastructure Team
         </div>
     </div>
 </body>
