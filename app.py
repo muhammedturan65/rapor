@@ -11,6 +11,72 @@ from openpyxl.drawing.image import Image as XLImage
 
 app = Flask(__name__)
 
+# --- BAKIM MODU AYARI ---
+# Bakımı açmak için True, kapatmak için False yapın.
+MAINTENANCE_MODE = True 
+
+MAINTENANCE_HTML = """
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Bakımı | Vercel Platform</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #000; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .container { text-align: center; max-width: 600px; padding: 20px; }
+        .logo { margin-bottom: 30px; }
+        .logo svg { width: 60px; height: 60px; fill: #fff; }
+        h1 { font-size: 24px; font-weight: 600; margin-bottom: 15px; letter-spacing: -0.5px; }
+        p { color: #888; font-size: 16px; line-height: 1.6; margin-bottom: 30px; }
+        .status-box { background: #111; border: 1px solid #333; padding: 15px; border-radius: 8px; display: inline-block; text-align: left; width: 100%; box-sizing: border-box; }
+        .status-item { display: flex; align-items: center; margin-bottom: 10px; }
+        .status-item:last-child { margin-bottom: 0; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 12px; }
+        .dot.orange { background-color: #f5a623; box-shadow: 0 0 10px #f5a623; }
+        .status-text { font-size: 14px; color: #eee; }
+        .code { font-family: monospace; color: #666; font-size: 12px; margin-top: 20px; }
+        .footer { margin-top: 40px; color: #444; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <svg viewBox="0 0 76 65" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M37.5274 0L75.0548 65H0L37.5274 0Z" fill="white"/></svg>
+        </div>
+        <h1>Planned Maintenance in Progress</h1>
+        <p>Vercel platform altyapısında gerçekleştirilen planlı güncelleme çalışması nedeniyle bu uygulama geçici olarak erişime kapatılmıştır. Veri güvenliğiniz için işlemler duraklatılmıştır.</p>
+        
+        <div class="status-box">
+            <div class="status-item">
+                <div class="dot orange"></div>
+                <div class="status-text"><strong>Platform:</strong> Vercel Edge Network Upgrade</div>
+            </div>
+            <div class="status-item">
+                <div class="dot orange"></div>
+                <div class="status-text"><strong>Status:</strong> Migrating Database Clusters (Region: fra1)</div>
+            </div>
+            <div class="status-item">
+                <div class="dot orange"></div>
+                <div class="status-text"><strong>Estimated Time:</strong> ~2 Hours</div>
+            </div>
+        </div>
+
+        <div class="code">Error Code: VERCEL_MAINTENANCE_FRA1_DEPLOYS</div>
+        
+        <div class="footer">
+            &copy; 2026 Vercel Inc. & Happy Center IT Department
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+@app.before_request
+def check_for_maintenance():
+    if MAINTENANCE_MODE and request.path != '/favicon.ico':
+        return render_template_string(MAINTENANCE_HTML), 503
+
 # --- GÖRSEL ARAYÜZ ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
