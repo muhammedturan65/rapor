@@ -65,7 +65,7 @@ MAINTENANCE_HTML = """
         <div class="code">Error Code: VERCEL_MAINTENANCE_FRA1_DEPLOYS</div>
         
         <div class="footer">
-            &copy; 2026 Vercel Inc. & Happy Center IT Department
+            &copy; 2026 Vercel Inc.
         </div>
     </div>
 </body>
